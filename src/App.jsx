@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { getMesActual, getMesSiguiente } from './lib/helpers';
 
-// Screens
 import ScreenLogin      from './components/screens/ScreenLogin';
 import ScreenDashboard  from './components/screens/ScreenDashboard';
 import ScreenHistorial  from './components/screens/ScreenHistorial';
@@ -11,11 +10,9 @@ import ScreenReports    from './components/screens/ScreenReports';
 import ScreenYo         from './components/screens/ScreenYo';
 import ScreenVoice      from './components/screens/ScreenVoice';
 
-// UI
 import BottomNav        from './components/ui/BottomNav';
 import Toast            from './components/ui/Toast';
 
-// Sheets / Modals
 import SheetDetail      from './sheets/SheetDetail';
 import SheetNext        from './sheets/SheetNext';
 import SheetCorte       from './sheets/SheetCorte';
@@ -29,7 +26,6 @@ export default function App() {
   const [mesFact, setMesFact]     = useState(getMesActual());
   const [toast, setToast]         = useState(null);
 
-  // Modales / sheets
   const [showVoice,   setShowVoice]   = useState(false);
   const [showMes,     setShowMes]     = useState(false);
   const [showNext,    setShowNext]    = useState(false);
@@ -70,7 +66,7 @@ export default function App() {
     }
   };
 
-    return (
+  return (
     <div
       className="app"
       data-theme="dark"
@@ -139,3 +135,4 @@ export default function App() {
       <Toast msg={toast} />
     </div>
   );
+}
