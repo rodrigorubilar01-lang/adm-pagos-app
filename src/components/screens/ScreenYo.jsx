@@ -6,7 +6,18 @@ import Btn from '../ui/Btn';
 import Icon from '../ui/Icon';
 
 export default function ScreenYo({ diaCorte, showToast }) {
-  const { user, config, logout } = useAuth();
+  const { user, config, logout, changePassword } = useAuth();
+
+  async function handleChangePassword() {
+    const nueva = window.prompt('Nueva contraseña (mínimo 6 caracteres):');
+    if (!nueva) return;
+    try {
+      await changePassword(nueva);
+      window.alert('Contraseña actualizada correctamente.');
+    } catch (err) {
+      window.alert('Error: ' + err.message);
+    }
+  }
 
   return (
     <div className="app-scroll" style={{ paddingBottom: 120 }}>
@@ -56,9 +67,14 @@ export default function ScreenYo({ diaCorte, showToast }) {
 
         <div>
           <Label>SESIÓN</Label>
-          <Btn variant="dangerGhost" size="lg" full icon="logout" onClick={logout}>
-            Cerrar sesión
-          </Btn>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Btn variant="ghost" size="lg" full onClick={handleChangePassword}>
+              Cambiar contraseña
+            </Btn>
+            <Btn variant="dangerGhost" size="lg" full icon="logout" onClick={logout}>
+              Cerrar sesión
+            </Btn>
+          </div>
         </div>
 
         <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--fg-4)', marginTop: 20 }}>
