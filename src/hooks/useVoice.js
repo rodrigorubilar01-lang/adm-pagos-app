@@ -24,12 +24,10 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
   function startListening() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setError('Tu navegador no soporta reconocimiento de voz. Usa Safari o Chrome.');
+      setError('Tu navegador no soporta reconocimiento de voz. Usa "Escribir en cambio".');
       return;
     }
-
     stopAndRelease();
-
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-CL';
     recognition.interimResults = false;
@@ -46,13 +44,13 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
     recognition.onerror = (event) => {
       stopAndRelease();
       if (event.error === 'not-allowed') {
-        setError('Permiso de micrófono denegado. Actívalo en Ajustes del teléfono.');
+        setError('Permiso de micrófono denegado. Actívalo en Ajustes.');
       } else if (event.error === 'audio-capture') {
-        setError('No se pudo acceder al micrófono. Cierra otras apps que lo usen e intenta de nuevo.');
+        setError('No se pudo acceder al micrófono. Usa "Escribir en cambio".');
       } else if (event.error === 'no-speech') {
         setError('No se detectó voz. Habla más cerca del micrófono.');
       } else {
-        setError(`Error de micrófono: ${event.error}. Toca "Reintentar".`);
+        setError(`Error: ${event.error}. Usa "Escribir en cambio".`);
       }
     };
 
@@ -66,14 +64,12 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
       setResult(null);
       setError(null);
     } catch (err) {
-      setError('No se pudo iniciar el micrófono. Intenta de nuevo.');
+      setError('No se pudo iniciar el micrófono. Usa "Escribir en cambio".');
       stopAndRelease();
     }
   }
 
-  function stopListening() {
-    stopAndRelease();
-  }
+  function stopListening() { stopAndRelease(); }
 
   async function parseWithClaude(texto) {
     setParsing(true);
@@ -81,12 +77,7 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
       const res = await fetch(`${PROXY_URL}/parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          texto,
-          usuario,
-          dia_corte: diaCorte,
-          mes_actual: mesFact,
-        }),
+        body: JSON.stringify({ texto, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -95,10 +86,15 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
       const gasto = await res.json();
       setResult(gasto);
     } catch (err) {
-      setError(`No pude procesar el audio: ${err.message}. Toca "Reintentar".`);
+      setError(`No pude procesar: ${err.message}`);
     } finally {
       setParsing(false);
     }
+  }
+
+  function procesarTexto(texto) {
+    setTranscript(texto);
+    parseWithClaude(texto);
   }
 
   function reset() {
@@ -109,5 +105,5 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
     setParsing(false);
   }
 
-  return { listening, transcript, parsing, result, error, startListening, stopListening, reset };
+  return { listening, transcript, parsing, result, error, startListening, stopListening, reset, procesarTexto };
 }
