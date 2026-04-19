@@ -52,5 +52,10 @@ export function useAuth() {
     if (!error) setConfig(c => ({ ...c, dia_corte: dia }));
   }
 
-  return { user, config, loading, login, logout, updateDiaCorte };
+  async function changePassword(newPassword) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  }
+
+  return { user, config, loading, login, logout, updateDiaCorte, changePassword };
 }
