@@ -96,11 +96,19 @@ input {
 .app {
   width: 100%;
   max-width: 430px;
-  min-height: 100dvh;
+  height: 100dvh;
   margin: 0 auto;
-  position: relative;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
-  padding-bottom: 88px;
+  overflow: hidden;
+}
+
+/* Área scrollable de contenido */
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Scroll contenedor de screens */
