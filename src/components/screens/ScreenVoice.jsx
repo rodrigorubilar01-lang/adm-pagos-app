@@ -1,4 +1,4 @@
-// ScreenVoice.jsx — grabación de voz + parseo Claude + confirmación
+// ScreenVoice.jsx — entrada de gasto por voz o texto
 import { useState, useEffect } from 'react';
 import { useVoice } from '../../hooks/useVoice';
 import { useGastos } from '../../hooks/useGastos';
@@ -14,6 +14,8 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
 
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [textoManual, setTextoManual] = useState('');
+  const [modoTexto, setModoTexto] = useState(false);
 
   useEffect(() => {
     if (voice.result) {
@@ -22,6 +24,11 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
       setDraft({ ...voice.result, fecha: hoy, mes_fact });
     }
   }, [voice.result, diaCorte]);
+
+  function handleClose() {
+    voice.reset();
+    onClose();
+  }
 
   async function handleSave() {
     if (!draft || !user) return;
@@ -48,34 +55,18 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
     }
   }
 
-  return (
-    <div
-      className="fade-in"
-      style={{
-        position: 'fixed', inset: 0, background: 'var(--bg)', zIndex: 120,
-        display: 'flex', flexDirection: 'column', maxWidth: 430, margin: '0 auto',
-      }}
-    >
-      <div style={{ padding: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={() => { voice.reset(); onClose(); }}
-          style={{
-            width: 36, height: 36, borderRadius: 999,
-            background: 'var(--bg-2)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Icon name="close" size={18} color="var(--fg-2)" />
-        </button>
-      </div>
+  const mostrarInicio = !voice.transcript && !voice.listening && !voice.parsing && !draft && !voice.error && !modoTexto;
 
+  return (
+    <div className="fade-in" style={{
+      position: 'fixed', inset: 0, background: 'var(--bg)', zIndex: 120,
+      display: 'flex', flexDirection: 'column', maxWidth: 430, margin: '0 auto',
+    }}>
       <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
 
-        {!voice.transcript && !voice.listening && !voice.parsing && !draft && !voice.error && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-            <div style={{ fontSize: 13, color: 'var(--fg-3)', marginBottom: 24 }}>
-              Toca el micrófono y dicta tu gasto
-            </div>
+        {mostrarInicio && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 24 }}>
+            <div style={{ fontSize: 13, color: 'var(--fg-3)' }}>Dicta tu gasto o escríbelo</div>
             <button
               onClick={voice.startListening}
               style={{
@@ -87,9 +78,36 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
             >
               <Icon name="mic" size={48} stroke={2} />
             </button>
-            <div style={{ marginTop: 24, fontSize: 12, color: 'var(--fg-4)', maxWidth: 280 }}>
-              Ej. "Gasté 20 lucas en uber con crédito"
+            <button onClick={() => setModoTexto(true)} style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>
+              Escribir en cambio →
+            </button>
+          </div>
+        )}
+
+        {modoTexto && !draft && !voice.parsing && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--fg-3)', textAlign: 'center' }}>
+              Escribe (o dicta con el teclado) tu gasto
             </div>
+            <textarea
+              value={textoManual}
+              onChange={e => setTextoManual(e.target.value)}
+              placeholder='"gasté 20 lucas en uber con crédito"'
+              autoFocus
+              rows={4}
+              style={{
+                width: '100%', padding: 14, borderRadius: 12, fontSize: 15,
+                border: '1px solid var(--border)', background: 'var(--bg-2)',
+                color: 'var(--fg)', resize: 'none', lineHeight: 1.5,
+                boxSizing: 'border-box',
+              }}
+            />
+            <Btn variant="primary" full onClick={() => voice.procesarTexto(textoManual.trim())} disabled={!textoManual.trim()}>
+              Procesar con IA
+            </Btn>
+            <button onClick={() => setModoTexto(false)} style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+              ← Usar micrófono
+            </button>
           </div>
         )}
 
@@ -103,14 +121,14 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
               <Icon name="mic" size={48} color="var(--accent-fg)" stroke={2} />
             </div>
             <div style={{ marginTop: 20, fontSize: 14, color: 'var(--fg-2)' }}>Escuchando…</div>
-            <button onClick={voice.stopListening} style={{ marginTop: 24, fontSize: 12, color: 'var(--fg-3)' }}>
+            <button onClick={voice.stopListening} style={{ marginTop: 24, fontSize: 13, color: 'var(--fg-3)', padding: '8px 20px', border: '1px solid var(--border)', borderRadius: 8 }}>
               Detener
             </button>
-            <style>{`@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .85; } }`}</style>
+            <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.06);opacity:.85}}`}</style>
           </div>
         )}
 
-        {voice.transcript && (
+        {voice.transcript && !voice.parsing && !draft && (
           <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 14, padding: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--fg-3)' }}>TRANSCRIPCIÓN</div>
             <div style={{ fontSize: 15, marginTop: 6, lineHeight: 1.4 }}>"{voice.transcript}"</div>
@@ -118,8 +136,8 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         )}
 
         {voice.parsing && (
-          <div style={{ textAlign: 'center', padding: 24, color: 'var(--fg-3)', fontSize: 13 }}>
-            Procesando con IA…
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ fontSize: 13, color: 'var(--fg-3)' }}>Procesando con IA…</div>
           </div>
         )}
 
@@ -128,8 +146,11 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
             <div style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: 14, borderRadius: 12, fontSize: 13 }}>
               {voice.error}
             </div>
+            <Btn variant="ghost" full onClick={() => { voice.reset(); setModoTexto(true); }}>
+              Escribir en cambio
+            </Btn>
             <Btn variant="primary" full onClick={voice.reset}>
-              Reintentar
+              Reintentar micrófono
             </Btn>
           </div>
         )}
@@ -137,18 +158,23 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         {draft && <DraftCard draft={draft} onChange={setDraft} usuario={usuario} />}
       </div>
 
-      {draft && (
-        <div style={{
-          borderTop: '1px solid var(--border)', padding: 16,
-          paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
-          display: 'flex', gap: 10,
-        }}>
-          <Btn variant="ghost" onClick={() => { voice.reset(); setDraft(null); }} full>Otra vez</Btn>
-          <Btn variant="primary" size="md" onClick={handleSave} disabled={saving} full>
-            {saving ? 'Guardando…' : 'Guardar'}
-          </Btn>
-        </div>
-      )}
+      {/* Footer siempre visible */}
+      <div style={{
+        borderTop: '1px solid var(--border)', padding: 16,
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
+        display: 'flex', gap: 10,
+      }}>
+        {draft ? (
+          <>
+            <Btn variant="ghost" onClick={() => { voice.reset(); setDraft(null); setTextoManual(''); }} full>Otra vez</Btn>
+            <Btn variant="primary" onClick={handleSave} disabled={saving} full>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Btn>
+          </>
+        ) : (
+          <Btn variant="ghost" full onClick={handleClose}>Cancelar</Btn>
+        )}
+      </div>
     </div>
   );
 }
@@ -165,8 +191,8 @@ const SUBCATS = {
   },
 };
 
-const TIPOS  = ['CRÉDITO', 'DÉBITO', 'TRANSFERENCIA', 'EFECTIVO', 'GIRO CAJERO'];
-const COBROS = ['UNICO', 'CUOTAS', 'MENSUAL'];
+const TIPOS  = ['CRÉDITO','DÉBITO','TRANSFERENCIA','EFECTIVO','GIRO CAJERO'];
+const COBROS = ['UNICO','CUOTAS','MENSUAL'];
 
 function DraftCard({ draft, onChange, usuario }) {
   const subcats = SUBCATS[usuario] || SUBCATS.rodrigo;
@@ -181,36 +207,30 @@ function DraftCard({ draft, onChange, usuario }) {
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--accent)' }}>
         GASTO DETECTADO {draft.confianza != null && `· ${Math.round(draft.confianza * 100)}%`}
       </div>
-
       <F label="Descripción">
-        <input value={draft.descripcion || ''} onChange={(e) => set('descripcion', e.target.value.toUpperCase())} style={{ fontSize: 15, fontWeight: 600 }} />
+        <input value={draft.descripcion || ''} onChange={e => set('descripcion', e.target.value.toUpperCase())} style={{ fontSize: 15, fontWeight: 600 }} />
       </F>
-
       <F label="Monto">
-        <input type="number" inputMode="numeric" value={draft.monto || ''} onChange={(e) => set('monto', e.target.value)} style={{ fontSize: 18, fontWeight: 700 }} className="num" />
+        <input type="number" inputMode="numeric" value={draft.monto || ''} onChange={e => set('monto', e.target.value)} style={{ fontSize: 18, fontWeight: 700 }} className="num" />
         <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{fmtCL(draft.monto || 0)}</div>
       </F>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <F label="Categoría">
-          <Select value={draft.categoria} onChange={(v) => { const first = subcats[v]?.[0] || draft.subcategoria; onChange({ ...draft, categoria: v, subcategoria: first }); }} options={cats} />
+          <Select value={draft.categoria} onChange={v => { const first = subcats[v]?.[0] || draft.subcategoria; onChange({ ...draft, categoria: v, subcategoria: first }); }} options={cats} />
         </F>
         <F label="Subcategoría">
-          <Select value={draft.subcategoria} onChange={(v) => set('subcategoria', v)} options={subcats[draft.categoria] || []} />
+          <Select value={draft.subcategoria} onChange={v => set('subcategoria', v)} options={subcats[draft.categoria] || []} />
         </F>
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <F label="Tipo"><Select value={draft.tipo} onChange={(v) => set('tipo', v)} options={TIPOS} /></F>
-        <F label="Cobro"><Select value={draft.tipo_cobro} onChange={(v) => set('tipo_cobro', v)} options={COBROS} /></F>
+        <F label="Tipo"><Select value={draft.tipo} onChange={v => set('tipo', v)} options={TIPOS} /></F>
+        <F label="Cobro"><Select value={draft.tipo_cobro} onChange={v => set('tipo_cobro', v)} options={COBROS} /></F>
       </div>
-
       {draft.tipo_cobro === 'CUOTAS' && (
         <F label="Cuotas totales">
-          <input type="number" inputMode="numeric" value={draft.cuotas_totales || ''} onChange={(e) => set('cuotas_totales', parseInt(e.target.value) || null)} className="num" style={{ fontSize: 15, fontWeight: 600 }} />
+          <input type="number" inputMode="numeric" value={draft.cuotas_totales || ''} onChange={e => set('cuotas_totales', parseInt(e.target.value) || null)} className="num" style={{ fontSize: 15, fontWeight: 600 }} />
         </F>
       )}
-
       {draft.necesita_confirmacion && draft.motivo_confirmacion && (
         <div style={{ fontSize: 12, padding: 10, borderRadius: 10, background: 'rgba(245,158,11,0.1)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.3)' }}>
           ⚠ {draft.motivo_confirmacion}
@@ -231,7 +251,7 @@ function F({ label, children }) {
 
 function Select({ value, onChange, options }) {
   return (
-    <select value={value || ''} onChange={(e) => onChange(e.target.value)}
+    <select value={value || ''} onChange={e => onChange(e.target.value)}
       style={{ background: 'none', border: 'none', outline: 'none', fontSize: 14, fontWeight: 600, color: 'var(--fg)', width: '100%', appearance: 'none' }}>
       {options.map(o => <option key={o} value={o} style={{ background: 'var(--bg-2)' }}>{o}</option>)}
     </select>
