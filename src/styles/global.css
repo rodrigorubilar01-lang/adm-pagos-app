@@ -1,5 +1,4 @@
-/* global.css — Variables de diseño ADM. PAGOS
-   Basado en el prototipo. Copiar los colores/temas del prototipo completo. */
+/* global.css — Variables de diseño ADM. PAGOS */
 
 /* ── Fuente ──────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -100,8 +99,8 @@ input {
   min-height: 100dvh;
   margin: 0 auto;
   position: relative;
-  overflow: hidden;
   background: var(--bg);
+  padding-bottom: 88px;
 }
 
 /* Scroll contenedor de screens */
