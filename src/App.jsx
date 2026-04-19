@@ -42,7 +42,6 @@ export default function App() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
 
-  // Determinar si el usuario es rodrigo o mariaelena por email
   const usuarioKey = user?.email?.includes('rodrigo') ? 'rodrigo' : 'mariaelena';
   const diaCorte   = config?.dia_corte || 22;
 
@@ -73,7 +72,9 @@ export default function App() {
 
   return (
     <div className="app" data-theme="dark" data-accent="green">
-      {renderScreen()}
+      <div className="app-content">
+        {renderScreen()}
+      </div>
 
       <BottomNav current={screen} onNav={setScreen} onMic={() => setShowVoice(true)} />
 
