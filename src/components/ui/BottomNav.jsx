@@ -12,9 +12,12 @@ export default function BottomNav({ current, onNav, onMic }) {
   return (
     <nav
       style={{
-        position: 'sticky',
+        position: 'fixed',
         bottom: 0,
+        left: '50%',
+        transform: 'translateX(-50%)',
         width: '100%',
+        maxWidth: 430,
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         background: 'var(--bg)',
         borderTop: '1px solid var(--border)',
