@@ -12,7 +12,7 @@ ENV VITE_PROXY_URL=$VITE_PROXY_URL
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run build
+RUN npm install --no-audit --no-fund
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
