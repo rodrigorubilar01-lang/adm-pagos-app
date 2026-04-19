@@ -70,9 +70,14 @@ export default function App() {
     }
   };
 
-  return (
-    <div className="app" data-theme="dark" data-accent="green">
-      <div className="app-content">
+    return (
+    <div
+      className="app"
+      data-theme="dark"
+      data-accent="green"
+      style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+    >
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {renderScreen()}
       </div>
 
@@ -134,4 +139,3 @@ export default function App() {
       <Toast msg={toast} />
     </div>
   );
-}
