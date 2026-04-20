@@ -1,32 +1,27 @@
-// useVoice.js — MediaRecorder + Whisper binario (sin base64)
+// useVoice.js v4 — MediaRecorder + FormData → /parse-audio
+// API: state machine (idle | recording | transcribing | done | error)
+
 import { useState, useRef } from 'react';
 
 export function useVoice({ usuario, diaCorte, mesFact }) {
-  const [listening, setListening]   = useState(false);
+  const [state, setState]           = useState('idle');
   const [transcript, setTranscript] = useState('');
-  const [parsing, setParsing]       = useState(false);
   const [result, setResult]         = useState(null);
   const [error, setError]           = useState(null);
-  const recorderRef = useRef(null);
-  const chunksRef   = useRef([]);
-  const streamRef   = useRef(null);
-  const autoStopRef = useRef(null);
 
-  function _release() {
-    clearTimeout(autoStopRef.current);
-    try { if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop(); } catch (_) {}
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    recorderRef.current = null;
-    streamRef.current   = null;
-    setListening(false);
-  }
+  const mediaRecorderRef = useRef(null);
+  const chunksRef        = useRef([]);
+  const streamRef        = useRef(null);
 
-  async function startListening() {
-    _release();
-    setTranscript(''); setResult(null); setError(null); setParsing(false);
+  async function startRecording() {
+    setError(null);
+    setTranscript('');
+    setResult(null);
+    chunksRef.current = [];
 
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       setError('Tu navegador no soporta grabación. Usa el modo texto.');
+      setState('error');
       return;
     }
 
@@ -34,115 +29,135 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']
-        .find(t => MediaRecorder.isTypeSupported(t)) || '';
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : 'audio/webm';
 
       const recorder = new MediaRecorder(stream, {
-        ...(mimeType ? { mimeType } : {}),
-        audioBitsPerSecond: 32000,
+        mimeType,
+        audioBitsPerSecond: 16000,
       });
-      recorderRef.current = recorder;
-      chunksRef.current   = [];
 
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
 
       recorder.onstop = async () => {
-        clearTimeout(autoStopRef.current);
         streamRef.current?.getTracks().forEach(t => t.stop());
         streamRef.current = null;
-        setListening(false);
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || 'audio/webm' });
-        await sendAudio(blob, recorder.mimeType || mimeType || 'audio/webm');
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        await sendToProxy(blob, mimeType);
       };
 
       recorder.start();
-      setListening(true);
-
-      // Auto-stop a los 20 segundos
-      autoStopRef.current = setTimeout(() => {
-        if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-      }, 20000);
+      mediaRecorderRef.current = recorder;
+      setState('recording');
 
     } catch (err) {
-      _release();
+      console.error('[useVoice] Error al acceder al micrófono:', err);
       if (err.name === 'NotAllowedError') {
         setError('Permiso de micrófono denegado. Actívalo en Ajustes del teléfono.');
       } else {
         setError(`No se pudo acceder al micrófono: ${err.message}`);
       }
+      setState('error');
     }
   }
 
-  function stopListening() {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    else _release();
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      setState('transcribing');
+      mediaRecorderRef.current.stop();
+    }
   }
 
-  async function sendAudio(blob, mimeType) {
+  async function sendToProxy(blob, mimeType) {
     if (blob.size < 500) {
       setError('Audio muy corto. Habla por al menos 1 segundo e intenta de nuevo.');
+      setState('error');
       return;
     }
-    setParsing(true);
     try {
-      // Enviamos el audio como binario puro — sin base64, sin JSON
-      const qs = new URLSearchParams({
-        usuario:    usuario    || 'rodrigo',
-        dia_corte:  String(diaCorte),
-        mes_actual: mesFact    || '',
-      }).toString();
+      const formData = new FormData();
+      formData.append('file', blob, `audio.${mimeType.includes('mp4') ? 'm4a' : 'webm'}`);
+      formData.append('usuario', usuario || 'rodrigo');
+      formData.append('dia_corte', String(diaCorte || 22));
+      formData.append('mes_actual', mesFact || 'ABRIL 2026');
 
-      const res = await fetch(`/parse-audio?${qs}`, {
-        method:  'POST',
-        headers: { 'Content-Type': mimeType || 'audio/webm' },
-        body:    blob,
+      const res = await fetch('/parse-audio', {
+        method: 'POST',
+        body: formData,
       });
 
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detalle || e.error || `Error ${res.status}`);
+        const err = await res.json().catch(() => ({ error: 'Error del servidor' }));
+        throw new Error(err.detalle || err.error || `HTTP ${res.status}`);
       }
-      const data = await res.json();
-      const { transcript: tx, ...gasto } = data;
-      setTranscript(tx || '');
+
+      const gasto = await res.json();
+      setTranscript(gasto.transcripcion || '');
       setResult(gasto);
+      setState('done');
+
     } catch (err) {
-      setError(`No pude procesar el audio: ${err.message}. Toca "Reintentar".`);
-    } finally {
-      setParsing(false);
+      console.error('[useVoice] Error enviando audio:', err);
+      setError(`Error al procesar el audio: ${err.message}`);
+      setState('error');
     }
   }
 
-  async function parseWithClaude(texto) {
-    setParsing(true);
+  async function parseTexto(texto) {
+    setState('transcribing');
+    setError(null);
+    setTranscript(texto);
     try {
       const res = await fetch('/parse', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ texto, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
+        body: JSON.stringify({
+          texto,
+          usuario: usuario || 'rodrigo',
+          dia_corte: diaCorte || 22,
+          mes_actual: mesFact || 'ABRIL 2026',
+        }),
       });
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detalle || `Error ${res.status}`);
+        const err = await res.json().catch(() => ({ error: 'Error del servidor' }));
+        throw new Error(err.detalle || err.error || `HTTP ${res.status}`);
       }
       const gasto = await res.json();
       setResult(gasto);
+      setState('done');
     } catch (err) {
-      setError(`No pude procesar: ${err.message}. Toca "Reintentar".`);
-    } finally {
-      setParsing(false);
+      setError(`Error: ${err.message}`);
+      setState('error');
     }
   }
 
   function reset() {
-    _release();
-    setTranscript(''); setResult(null); setError(null); setParsing(false);
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+    } catch (_) {}
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setState('idle');
+    setTranscript('');
+    setResult(null);
+    setError(null);
   }
 
-  function procesarTexto(texto) {
-    setTranscript(texto);
-    parseWithClaude(texto);
-  }
-
-  return { listening, transcript, parsing, result, error, startListening, stopListening, reset, procesarTexto };
+  return {
+    state,
+    transcript,
+    result,
+    error,
+    startRecording,
+    stopRecording,
+    parseTexto,
+    reset,
+  };
 }
