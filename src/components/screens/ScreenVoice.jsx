@@ -1,5 +1,12 @@
-// ScreenVoice.jsx — v4 + push-to-talk + modo texto
-import { useState, useEffect } from 'react';
+// ScreenVoice.jsx v4.1 — push-to-talk robusto + modo texto
+// Arregla: botón que se "queda pegado", doble-tap race, iOS cancela gesto sin soltar mic.
+// Cambios clave vs v4.0:
+//   - setPointerCapture en onPointerDown → el pointer queda atrapado en el botón
+//   - onPointerCancel handler (iOS lo dispara cuando abres Control Center, etc)
+//   - pressedRef evita doble-fire de start/stop
+//   - disabled mientras state === 'transcribing' (no permite apretar mientras procesa)
+
+import { useState, useEffect, useRef } from 'react';
 import { useVoice } from '../../hooks/useVoice';
 import { useGastos } from '../../hooks/useGastos';
 import { useAuth } from '../../hooks/useAuth';
@@ -16,6 +23,8 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
   const [saving, setSaving]           = useState(false);
   const [textoManual, setTextoManual] = useState('');
   const [modoTexto, setModoTexto]     = useState(false);
+
+  const pressedRef = useRef(false); // guard contra doble-fire de onPointerDown/Up
 
   useEffect(() => {
     if (voice.result) {
@@ -52,9 +61,46 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
     }
   }
 
-  const mostrarMic  = (voice.state === 'idle' || voice.state === 'recording') && !draft && !modoTexto;
-  const estaGrabando = voice.state === 'recording';
-  const procesando   = voice.state === 'transcribing';
+  // ── Handlers push-to-talk (robustos) ────────────────────────
+  function handlePointerDown(e) {
+    e.preventDefault();
+    if (pressedRef.current) return;               // ya está presionado, ignorar
+    if (voice.state === 'transcribing') return;   // no grabar mientras procesa
+    pressedRef.current = true;
+
+    // Capturar el pointer en este elemento → onPointerUp/Cancel siempre disparan
+    // aunque el dedo se mueva fuera del botón.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+
+    voice.startRecording();
+  }
+
+  function handlePointerUp(e) {
+    if (!pressedRef.current) return;
+    pressedRef.current = false;
+
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+
+    voice.stopRecording();
+  }
+
+  function handlePointerCancel(e) {
+    // iOS dispara esto si el gesto se interrumpe (Control Center, notificación push, etc)
+    if (!pressedRef.current) return;
+    pressedRef.current = false;
+
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+
+    // Cancelar grabación (libera mic sin enviar a Whisper)
+    if (voice.cancelRecording) voice.cancelRecording();
+    else voice.stopRecording();
+  }
+
+  const isRecording = voice.state === 'recording';
+  const isBusy      = voice.state === 'transcribing';
+
+  // Botón mic visible tanto en reposo como grabando
+  const mostrarMic = !voice.transcript && !isBusy && !draft && !voice.error && !modoTexto;
 
   return (
     <div className="fade-in" style={{
@@ -67,33 +113,37 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         {mostrarMic && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 24 }}>
             <div style={{ fontSize: 13, color: 'var(--fg-3)', minHeight: 20 }}>
-              {estaGrabando ? 'Suelta para procesar' : 'Mantén presionado y habla'}
+              {isRecording ? 'Suelta para procesar' : 'Mantén presionado y habla'}
             </div>
 
             <button
-              onPointerDown={(e) => { e.preventDefault(); voice.startRecording(); }}
-              onPointerUp={() => { if (estaGrabando) voice.stopRecording(); }}
-              onPointerLeave={() => { if (estaGrabando) voice.stopRecording(); }}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
               onContextMenu={(e) => e.preventDefault()}
+              disabled={isBusy}
               style={{
                 width: 140, height: 140, borderRadius: '50%',
-                background: estaGrabando ? '#ef4444' : 'var(--accent)',
-                color: estaGrabando ? '#fff' : 'var(--accent-fg)',
+                background: isRecording ? '#ef4444' : 'var(--accent)',
+                color: isRecording ? '#fff' : 'var(--accent-fg)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: estaGrabando
+                boxShadow: isRecording
                   ? '0 10px 40px rgba(239,68,68,0.45)'
                   : '0 10px 30px rgba(34,197,94,0.3)',
-                animation: estaGrabando ? 'pulse 1s infinite' : 'none',
+                animation: isRecording ? 'pulse 1s infinite' : 'none',
                 touchAction: 'none',
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
+                WebkitTouchCallout: 'none',
                 transition: 'background 0.15s, box-shadow 0.15s',
+                opacity: isBusy ? 0.5 : 1,
+                cursor: isBusy ? 'not-allowed' : 'pointer',
               }}
             >
               <Icon name="mic" size={52} stroke={2} />
             </button>
 
-            {!estaGrabando && (
+            {!isRecording && (
               <button
                 onClick={() => setModoTexto(true)}
                 style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}
@@ -112,7 +162,7 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         )}
 
         {/* ── Modo texto ── */}
-        {modoTexto && !draft && !procesando && (
+        {modoTexto && !draft && !isBusy && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--fg-3)', textAlign: 'center' }}>
               Escribe (o dicta con el teclado) tu gasto
@@ -147,14 +197,14 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         )}
 
         {/* ── Procesando ── */}
-        {procesando && (
+        {isBusy && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--fg-3)' }}>Procesando con IA…</div>
           </div>
         )}
 
         {/* ── Error ── */}
-        {voice.state === 'error' && voice.error && (
+        {voice.error && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: 14, borderRadius: 12, fontSize: 13 }}>
               {voice.error}
