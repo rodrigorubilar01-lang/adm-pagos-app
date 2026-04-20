@@ -1,5 +1,5 @@
-// useVoice.js — MediaRecorder + Whisper (OpenAI) + Claude
-import { useState, useRef, useEffect } from 'react';
+// useVoice.js — MediaRecorder + Whisper binario (sin base64)
+import { useState, useRef } from 'react';
 
 export function useVoice({ usuario, diaCorte, mesFact }) {
   const [listening, setListening]   = useState(false);
@@ -10,10 +10,10 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
   const recorderRef = useRef(null);
   const chunksRef   = useRef([]);
   const streamRef   = useRef(null);
-
-  useEffect(() => { return () => _release(); }, []);
+  const autoStopRef = useRef(null);
 
   function _release() {
+    clearTimeout(autoStopRef.current);
     try { if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop(); } catch (_) {}
     streamRef.current?.getTracks().forEach(t => t.stop());
     recorderRef.current = null;
@@ -38,29 +38,31 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
         .find(t => MediaRecorder.isTypeSupported(t)) || '';
 
       const recorder = new MediaRecorder(stream, {
-  ...(mimeType ? { mimeType } : {}),
-  audioBitsPerSecond: 32000,
-});
-
-// Auto-stop a los 20 segundos
-setTimeout(() => {
-  if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-}, 20000);
+        ...(mimeType ? { mimeType } : {}),
+        audioBitsPerSecond: 32000,
+      });
       recorderRef.current = recorder;
       chunksRef.current   = [];
 
       recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
 
       recorder.onstop = async () => {
+        clearTimeout(autoStopRef.current);
         streamRef.current?.getTracks().forEach(t => t.stop());
         streamRef.current = null;
         setListening(false);
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        await sendAudio(blob, recorder.mimeType);
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || 'audio/webm' });
+        await sendAudio(blob, recorder.mimeType || mimeType || 'audio/webm');
       };
 
       recorder.start();
       setListening(true);
+
+      // Auto-stop a los 20 segundos
+      autoStopRef.current = setTimeout(() => {
+        if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      }, 20000);
+
     } catch (err) {
       _release();
       if (err.name === 'NotAllowedError') {
@@ -77,25 +79,25 @@ setTimeout(() => {
   }
 
   async function sendAudio(blob, mimeType) {
-    if (blob.size < 1000) {
+    if (blob.size < 500) {
       setError('Audio muy corto. Habla por al menos 1 segundo e intenta de nuevo.');
       return;
     }
     setParsing(true);
     try {
-      const buf   = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary  = '';
-      for (let i = 0; i < bytes.length; i += 8192) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      }
-      const base64 = btoa(binary);
+      // Enviamos el audio como binario puro — sin base64, sin JSON
+      const qs = new URLSearchParams({
+        usuario:    usuario    || 'rodrigo',
+        dia_corte:  String(diaCorte),
+        mes_actual: mesFact    || '',
+      }).toString();
 
-      const res = await fetch('/parse-audio', {
+      const res = await fetch(`/parse-audio?${qs}`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ audio: base64, mimeType, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
+        headers: { 'Content-Type': mimeType || 'audio/webm' },
+        body:    blob,
       });
+
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
         throw new Error(e.detalle || e.error || `Error ${res.status}`);
