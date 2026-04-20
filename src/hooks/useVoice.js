@@ -37,7 +37,15 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
       const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']
         .find(t => MediaRecorder.isTypeSupported(t)) || '';
 
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      const recorder = new MediaRecorder(stream, {
+  ...(mimeType ? { mimeType } : {}),
+  audioBitsPerSecond: 32000,
+});
+
+// Auto-stop a los 20 segundos
+setTimeout(() => {
+  if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+}, 20000);
       recorderRef.current = recorder;
       chunksRef.current   = [];
 
