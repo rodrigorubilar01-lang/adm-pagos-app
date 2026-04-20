@@ -5,7 +5,10 @@ export default function TopBar({ title, mesFact, onOpenMes, right }) {
   return (
     <header
       style={{
-        padding: '16px 20px 12px',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+        paddingRight: 20,
+        paddingBottom: 12,
+        paddingLeft: 20,
         background: 'var(--bg)',
         position: 'sticky',
         top: 0,
