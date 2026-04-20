@@ -1,4 +1,4 @@
-// ScreenVoice.jsx — entrada de gasto por voz o texto
+// ScreenVoice.jsx — push-to-talk + modo texto
 import { useState, useEffect } from 'react';
 import { useVoice } from '../../hooks/useVoice';
 import { useGastos } from '../../hooks/useGastos';
@@ -12,10 +12,10 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
   const { crearGasto } = useGastos(mesFact);
   const voice = useVoice({ usuario, diaCorte, mesFact });
 
-  const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [draft, setDraft]             = useState(null);
+  const [saving, setSaving]           = useState(false);
   const [textoManual, setTextoManual] = useState('');
-  const [modoTexto, setModoTexto] = useState(false);
+  const [modoTexto, setModoTexto]     = useState(false);
 
   useEffect(() => {
     if (voice.result) {
@@ -25,10 +25,7 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
     }
   }, [voice.result, diaCorte]);
 
-  function handleClose() {
-    voice.reset();
-    onClose();
-  }
+  function handleClose() { voice.reset(); onClose(); }
 
   async function handleSave() {
     if (!draft || !user) return;
@@ -55,7 +52,7 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
     }
   }
 
-  const mostrarInicio = !voice.transcript && !voice.listening && !voice.parsing && !draft && !voice.error && !modoTexto;
+  const mostrarMic = !voice.transcript && !voice.parsing && !draft && !voice.error && !modoTexto;
 
   return (
     <div className="fade-in" style={{
@@ -64,23 +61,47 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
     }}>
       <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
 
-        {mostrarInicio && (
+        {mostrarMic && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 24 }}>
-            <div style={{ fontSize: 13, color: 'var(--fg-3)' }}>Dicta tu gasto o escríbelo</div>
+            <div style={{ fontSize: 13, color: 'var(--fg-3)', minHeight: 20 }}>
+              {voice.listening ? 'Suelta para procesar' : 'Mantén presionado y habla'}
+            </div>
             <button
-              onClick={voice.startListening}
+              onPointerDown={(e) => { e.preventDefault(); voice.startListening(); }}
+              onPointerUp={() => voice.stopListening()}
+              onPointerLeave={() => { if (voice.listening) voice.stopListening(); }}
+              onContextMenu={(e) => e.preventDefault()}
               style={{
-                width: 120, height: 120, borderRadius: '50%',
-                background: 'var(--accent)', color: 'var(--accent-fg)',
+                width: 140, height: 140, borderRadius: '50%',
+                background: voice.listening ? '#ef4444' : 'var(--accent)',
+                color: voice.listening ? '#fff' : 'var(--accent-fg)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 10px 30px rgba(34,197,94,0.3)',
+                boxShadow: voice.listening
+                  ? '0 10px 40px rgba(239,68,68,0.45)'
+                  : '0 10px 30px rgba(34,197,94,0.3)',
+                animation: voice.listening ? 'pulse 1s infinite' : 'none',
+                touchAction: 'none',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                transition: 'background 0.15s, box-shadow 0.15s',
               }}
             >
-              <Icon name="mic" size={48} stroke={2} />
+              <Icon name="mic" size={52} stroke={2} />
             </button>
-            <button onClick={() => setModoTexto(true)} style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>
-              Escribir en cambio →
-            </button>
+            {!voice.listening && (
+              <button
+                onClick={() => setModoTexto(true)}
+                style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}
+              >
+                Escribir en cambio →
+              </button>
+            )}
+            <style>{`
+              @keyframes pulse {
+                0%,100% { transform: scale(1); opacity: 1; }
+                50%      { transform: scale(1.08); opacity: 0.88; }
+              }
+            `}</style>
           </div>
         )}
 
@@ -92,17 +113,16 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
             <textarea
               value={textoManual}
               onChange={e => setTextoManual(e.target.value)}
-              placeholder='"gasté 20 lucas en uber con crédito"'
+              placeholder='Ej: "gasté 20 lucas en uber con crédito"'
               autoFocus
               rows={4}
               style={{
                 width: '100%', padding: 14, borderRadius: 12, fontSize: 15,
                 border: '1px solid var(--border)', background: 'var(--bg-2)',
                 color: 'var(--fg)', resize: 'none', lineHeight: 1.5,
-                boxSizing: 'border-box',
               }}
             />
-            <Btn variant="primary" full onClick={() => voice.procesarTexto(textoManual.trim())} disabled={!textoManual.trim()}>
+            <Btn variant="primary" full onClick={() => { if (textoManual.trim()) voice.procesarTexto(textoManual.trim()); }} disabled={!textoManual.trim()}>
               Procesar con IA
             </Btn>
             <button onClick={() => setModoTexto(false)} style={{ fontSize: 12, color: 'var(--fg-3)' }}>
@@ -111,24 +131,7 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
           </div>
         )}
 
-        {voice.listening && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{
-              width: 120, height: 120, borderRadius: '50%', background: 'var(--accent)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              animation: 'pulse 1.6s infinite',
-            }}>
-              <Icon name="mic" size={48} color="var(--accent-fg)" stroke={2} />
-            </div>
-            <div style={{ marginTop: 20, fontSize: 14, color: 'var(--fg-2)' }}>Escuchando…</div>
-            <button onClick={voice.stopListening} style={{ marginTop: 24, fontSize: 13, color: 'var(--fg-3)', padding: '8px 20px', border: '1px solid var(--border)', borderRadius: 8 }}>
-              Detener
-            </button>
-            <style>{`@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.06);opacity:.85}}`}</style>
-          </div>
-        )}
-
-        {voice.transcript && !voice.parsing && !draft && (
+        {voice.transcript && (
           <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 14, padding: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--fg-3)' }}>TRANSCRIPCIÓN</div>
             <div style={{ fontSize: 15, marginTop: 6, lineHeight: 1.4 }}>"{voice.transcript}"</div>
@@ -136,7 +139,7 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         )}
 
         {voice.parsing && (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--fg-3)' }}>Procesando con IA…</div>
           </div>
         )}
@@ -158,7 +161,6 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
         {draft && <DraftCard draft={draft} onChange={setDraft} usuario={usuario} />}
       </div>
 
-      {/* Footer siempre visible */}
       <div style={{
         borderTop: '1px solid var(--border)', padding: 16,
         paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
@@ -191,13 +193,13 @@ const SUBCATS = {
   },
 };
 
-const TIPOS  = ['CRÉDITO','DÉBITO','TRANSFERENCIA','EFECTIVO','GIRO CAJERO'];
-const COBROS = ['UNICO','CUOTAS','MENSUAL'];
+const TIPOS  = ['CRÉDITO', 'DÉBITO', 'TRANSFERENCIA', 'EFECTIVO', 'GIRO CAJERO'];
+const COBROS = ['UNICO', 'CUOTAS', 'MENSUAL'];
 
 function DraftCard({ draft, onChange, usuario }) {
   const subcats = SUBCATS[usuario] || SUBCATS.rodrigo;
   const cats = Object.keys(subcats);
-  const set = (k, v) => onChange({ ...draft, [k]: v });
+  const set  = (k, v) => onChange({ ...draft, [k]: v });
 
   return (
     <div className="fade-up" style={{
