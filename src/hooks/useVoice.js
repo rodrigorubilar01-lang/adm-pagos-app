@@ -1,7 +1,5 @@
-// useVoice.js — grabación de audio + parseo via proxy Claude
+// useVoice.js — MediaRecorder + Whisper (OpenAI) + Claude
 import { useState, useRef, useEffect } from 'react';
-
-const PROXY_URL = ''; // nginx reenvía /parse al proxy internamente — sin CORS
 
 export function useVoice({ usuario, diaCorte, mesFact }) {
   const [listening, setListening]   = useState(false);
@@ -9,100 +7,131 @@ export function useVoice({ usuario, diaCorte, mesFact }) {
   const [parsing, setParsing]       = useState(false);
   const [result, setResult]         = useState(null);
   const [error, setError]           = useState(null);
-  const recognitionRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef   = useRef([]);
+  const streamRef   = useRef(null);
 
-  useEffect(() => {
-    return () => { recognitionRef.current?.abort(); };
-  }, []);
+  useEffect(() => { return () => _release(); }, []);
 
-  function stopAndRelease() {
-    try { recognitionRef.current?.abort(); } catch (_) {}
-    recognitionRef.current = null;
+  function _release() {
+    try { if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop(); } catch (_) {}
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    recorderRef.current = null;
+    streamRef.current   = null;
     setListening(false);
   }
 
-  function startListening() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError('Tu navegador no soporta reconocimiento de voz. Usa "Escribir en cambio".');
+  async function startListening() {
+    _release();
+    setTranscript(''); setResult(null); setError(null); setParsing(false);
+
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setError('Tu navegador no soporta grabación. Usa el modo texto.');
       return;
     }
-    stopAndRelease();
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'es-CL';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
 
-    recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript;
-      setTranscript(text);
-      stopAndRelease();
-      parseWithClaude(text);
-    };
-
-    recognition.onerror = (event) => {
-      stopAndRelease();
-      if (event.error === 'not-allowed') {
-        setError('Permiso de micrófono denegado. Actívalo en Ajustes.');
-      } else if (event.error === 'audio-capture') {
-        setError('No se pudo acceder al micrófono. Usa "Escribir en cambio".');
-      } else if (event.error === 'no-speech') {
-        setError('No se detectó voz. Habla más cerca del micrófono.');
-      } else {
-        setError(`Error: ${event.error}. Usa "Escribir en cambio".`);
-      }
-    };
-
-    recognition.onend = () => stopAndRelease();
-
-    recognitionRef.current = recognition;
     try {
-      recognition.start();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']
+        .find(t => MediaRecorder.isTypeSupported(t)) || '';
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      recorderRef.current = recorder;
+      chunksRef.current   = [];
+
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+
+      recorder.onstop = async () => {
+        streamRef.current?.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        setListening(false);
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
+        await sendAudio(blob, recorder.mimeType);
+      };
+
+      recorder.start();
       setListening(true);
-      setTranscript('');
-      setResult(null);
-      setError(null);
     } catch (err) {
-      setError('No se pudo iniciar el micrófono. Usa "Escribir en cambio".');
-      stopAndRelease();
+      _release();
+      if (err.name === 'NotAllowedError') {
+        setError('Permiso de micrófono denegado. Actívalo en Ajustes del teléfono.');
+      } else {
+        setError(`No se pudo acceder al micrófono: ${err.message}`);
+      }
     }
   }
 
-  function stopListening() { stopAndRelease(); }
+  function stopListening() {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    else _release();
+  }
 
-  async function parseWithClaude(texto) {
+  async function sendAudio(blob, mimeType) {
+    if (blob.size < 1000) {
+      setError('Audio muy corto. Habla por al menos 1 segundo e intenta de nuevo.');
+      return;
+    }
     setParsing(true);
     try {
-      const res = await fetch(`${PROXY_URL}/parse`, {
-        method: 'POST',
+      const buf   = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary  = '';
+      for (let i = 0; i < bytes.length; i += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      }
+      const base64 = btoa(binary);
+
+      const res = await fetch('/parse-audio', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
+        body:    JSON.stringify({ audio: base64, mimeType, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detalle || `Error ${res.status}`);
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.detalle || e.error || `Error ${res.status}`);
       }
-      const gasto = await res.json();
+      const data = await res.json();
+      const { transcript: tx, ...gasto } = data;
+      setTranscript(tx || '');
       setResult(gasto);
     } catch (err) {
-      setError(`No pude procesar: ${err.message}`);
+      setError(`No pude procesar el audio: ${err.message}. Toca "Reintentar".`);
     } finally {
       setParsing(false);
     }
   }
 
-  function procesarTexto(texto) {
-    setTranscript(texto);
-    parseWithClaude(texto);
+  async function parseWithClaude(texto) {
+    setParsing(true);
+    try {
+      const res = await fetch('/parse', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ texto, usuario, dia_corte: diaCorte, mes_actual: mesFact }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.detalle || `Error ${res.status}`);
+      }
+      const gasto = await res.json();
+      setResult(gasto);
+    } catch (err) {
+      setError(`No pude procesar: ${err.message}. Toca "Reintentar".`);
+    } finally {
+      setParsing(false);
+    }
   }
 
   function reset() {
-    stopAndRelease();
-    setTranscript('');
-    setResult(null);
-    setError(null);
-    setParsing(false);
+    _release();
+    setTranscript(''); setResult(null); setError(null); setParsing(false);
+  }
+
+  function procesarTexto(texto) {
+    setTranscript(texto);
+    parseWithClaude(texto);
   }
 
   return { listening, transcript, parsing, result, error, startListening, stopListening, reset, procesarTexto };
