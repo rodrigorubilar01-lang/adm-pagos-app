@@ -203,10 +203,26 @@ export default function ScreenVoice({ usuario, diaCorte, mesFact, onClose, onSav
           </div>
         )}
 
-        {/* ── Error ── */}
+              {/* ── Error ── */}
         {voice.error && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: 14, borderRadius: 12, fontSize: 13 }}>
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: 12,
+            padding: '0 8px',
+          }}>
+            <div style={{
+              background: 'var(--danger-soft)',
+              color: 'var(--danger)',
+              padding: 16,
+              borderRadius: 12,
+              fontSize: 14,
+              lineHeight: 1.5,
+              textAlign: 'center',
+              fontWeight: 500,
+            }}>
               {voice.error}
             </div>
             <Btn variant="ghost" full onClick={() => { voice.reset(); setModoTexto(true); }}>
