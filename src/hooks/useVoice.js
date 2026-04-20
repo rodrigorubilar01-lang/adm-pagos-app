@@ -1,7 +1,7 @@
 // useVoice.js — grabación de audio + parseo via proxy Claude
 import { useState, useRef, useEffect } from 'react';
 
-const PROXY_URL = import.meta.env.VITE_PROXY_URL || 'https://app-adm-pagos-adm-pagos.torwwh.easypanel.host';
+const PROXY_URL = ''; // nginx reenvía /parse al proxy internamente — sin CORS
 
 export function useVoice({ usuario, diaCorte, mesFact }) {
   const [listening, setListening]   = useState(false);
